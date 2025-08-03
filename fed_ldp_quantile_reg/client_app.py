@@ -49,24 +49,6 @@ class QuantileClient(NumPyClient):
             {"train_loss": train_loss},
         )
 
-    # def evaluate(self):
-    #     """Evaluate the model using MSE"""
-    #     tau = self.tau
-    #     q_tau = norm.ppf(tau)
-    #     beta_true = np.array([1 + q_tau] + [1] * 6)
-    #     net = self.net
-    #     with torch.no_grad():
-    #         w = net.linear.weight.cpu().numpy()
-    #         b = net.linear.bias.cpu().numpy()
-    #         beta_pred = np.concatenate([[b], w])
-    #         mse_total = np.mean((beta_pred - beta_true) ** 2)  # MSE
-
-    #         # print("\n--- 最终模型参数 ---")
-    #         # print(f"真实参数: {beta_true}")
-    #         # print(f"估计参数: {beta_pred}")
-    #         # print(f"整体 MSE: {mse_total:.6f}")
-    #     return mse_total
-
 def client_fn(context: Context):
     # Get configuration parameters
     partition_id = context.node_config["partition-id"]

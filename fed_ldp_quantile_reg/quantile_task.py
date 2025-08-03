@@ -73,7 +73,7 @@ def train(net, tau, r, trainloader, Em_list, server_rounds_cnt, device):
     """Train the model with LDP mechanism."""
     net.to(device)
     tau_tilde = r * tau + (1 - r) / 2
-    optimizer = torch.optim.SGD(net.parameters(), lr=0.001)
+    optimizer = torch.optim.SGD(net.parameters(), lr=0.01)
     
     running_loss = 0.0
     data_iter = iter(trainloader)
