@@ -1,0 +1,129 @@
+"""Federated LDP Quantile Regression Implementation."""
+
+from typing import Union
+import torch
+import torch.nn as nn
+import numpy as np
+import math
+from flwr.common import Context
+from collections import OrderedDict
+from torch.utils.data import DataLoader, TensorDataset
+
+
+class QuantileNet(nn.Module):
+    """Quantile Regression Model"""
+    
+    def __init__(self, input_dim=6):
+        super(QuantileNet, self).__init__()
+        self.linear = nn.Linear(input_dim, 1)
+    
+    def forward(self, x):
+        return self.linear(x)
+
+
+def generate_data(rounds: int, local_updates_mode: Union[str|int], n_clients: int):
+    """Generate synthetic data for quantile regression."""
+
+    if isinstance(local_updates_mode,int):
+        Em_list = [local_updates_mode] * rounds
+    elif isinstance(local_updates_mode,str) and local_updates_mode == 'log':
+        Em_list = [int(math.ceil(math.log2(i+1))) for i in range(1,rounds+1)]
+    
+    n_samples = sum(Em_list) * n_clients
+    p = 6  # dimension of covariates
+    
+    # Generate data
+    Sigma = np.array([[0.5 ** abs(j1 - j2) for j2 in range(p)] for j1 in range(p)])
+    X_covariates = np.random.multivariate_normal(
+        mean=np.zeros(p),
+        cov=Sigma,
+        size=n_samples
+    )  # shape: (n_samples, p)
+    
+    epsilon = np.random.randn(n_samples)
+    y = 1 + np.sum(X_covariates, axis=1) + epsilon
+
+    # Convert to PyTorch tensors
+    X = torch.from_numpy(X_covariates).float()
+    y = torch.from_numpy(y).float()
+    return X, y, Em_list
+
+
+def load_data(partition_id: int, num_partitions: int, context=Context):
+    """load data for quantile regression."""
+    X, y, Em_list = generate_data(
+        rounds=context.run_config['num-server-rounds'],
+        local_updates_mode=context.run_config['local-updates-mode'], 
+        n_clients=context.node_config['num-partitions']
+    )
+    
+    n_samples = len(y)
+    per_partition_num = n_samples // num_partitions
+    start_idx = partition_id * per_partition_num
+    end_idx = (partition_id + 1) * per_partition_num
+
+    # Create dataset and dataloaders
+    dataset = TensorDataset(X[start_idx:end_idx], y[start_idx:end_idx])
+    trainloader = DataLoader(dataset, batch_size=1, shuffle=True)
+    
+    return trainloader, Em_list
+
+
+def train(net, tau, r, trainloader, Em_list, server_rounds_cnt, device):
+    """Train the model with LDP mechanism."""
+    net.to(device)
+    tau_tilde = r * tau + (1 - r) / 2
+    optimizer = torch.optim.SGD(net.parameters(), lr=0.001)
+    
+    running_loss = 0.0
+    data_iter = iter(trainloader)
+    
+    # Perform specified number of SGD updates
+    local_iter_nums = Em_list[server_rounds_cnt]
+    for _ in range(local_iter_nums):
+        try:
+            x, y = next(data_iter)
+        except StopIteration:
+            print('Run out of data')   # 模拟状况下应该不会出现，real data 可能出现
+            
+        x, y = x.to(device), y.to(device)
+        optimizer.zero_grad()
+        
+        y_pred = net(x)
+        z_true = (y <= y_pred).float()
+        
+        # Apply LDP perturbation
+        if torch.rand(1).item() < r:
+            z_tilde = z_true
+        else:
+            z_tilde = torch.rand(1).item() < 0.5
+            z_tilde = torch.tensor(z_tilde, dtype=torch.float32, device=device)
+        
+        # Calculate gradients manually
+        net.linear.weight.grad = x * (z_tilde - tau_tilde)
+        net.linear.bias.grad = (z_tilde - tau_tilde).view(-1)
+        
+        # Update parameters
+        optimizer.step()
+        
+        # Calculate pinball loss for monitoring
+        residuals = y - y_pred
+        pinball_loss = torch.mean(torch.where(residuals >= 0,
+                                            tau * residuals,
+                                            (tau - 1) * residuals))
+        running_loss += pinball_loss.item()
+    
+    avg_loss = running_loss / local_iter_nums
+    return avg_loss
+
+
+def get_weights(net):
+    """Get model weights as a list of NumPy arrays."""
+    return [val.cpu().numpy() for _, val in net.state_dict().items()]
+
+
+def set_weights(net, parameters):
+    """Set model weights from a list of NumPy arrays."""
+    params_dict = zip(net.state_dict().keys(), parameters)
+    state_dict = OrderedDict({k: torch.tensor(v) for k, v in params_dict})
+    net.load_state_dict(state_dict, strict=True)

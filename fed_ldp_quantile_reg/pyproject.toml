@@ -1,0 +1,54 @@
+# =====================================================================
+# For a full TOML configuration guide, check the Flower docs:
+# https://flower.ai/docs/framework/how-to-configure-pyproject-toml.html
+# =====================================================================
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fed-ldp-quantile-reg"
+version = "1.0.0"
+description = "Federated Learning with Local Differential Privacy for Quantile Regression"
+license = "Apache-2.0"
+dependencies = [
+    "flwr[simulation]>=1.20.0",
+    "flwr-datasets[vision]>=0.5.0",
+    "torch>=2.0.0",
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[tool.flwr.app]
+publisher = "chensiting"
+
+[tool.flwr.app.components]
+serverapp = "fed_ldp_quantile_reg.server_app:app"
+clientapp = "fed_ldp_quantile_reg.client_app:app"
+
+
+# Custom config values accessible via `context.run_config`
+[tool.flwr.app.config]
+num-server-rounds = 1   # 通信次数
+fraction-fit = 1
+local-updates-mode = 5
+tau = 0.5
+r = 0.9
+
+# Default federation to use when running the app
+[tool.flwr.federations]
+default = "local-simulation"
+
+# Local simulation federation with 10 virtual SuperNodes
+[tool.flwr.federations.local-simulation]
+options.num-supernodes = 10
+
+# Remote federation example for use with SuperLink
+[tool.flwr.federations.remote-federation]
+address = "<SUPERLINK-ADDRESS>:<PORT>"
+insecure = true  # Remove this line to enable TLS
+# root-certificates = "<PATH/TO/ca.crt>"  # For TLS setup
