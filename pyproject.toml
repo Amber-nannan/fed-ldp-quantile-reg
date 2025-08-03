@@ -33,7 +33,7 @@ clientapp = "fed_ldp_quantile_reg.client_app:app"
 
 # Custom config values accessible via `context.run_config`
 [tool.flwr.app.config]
-num-server-rounds = 200   # 通信次数
+num-server-rounds = 5000   # 通信次数
 fraction-fit = 1
 tau = 0.9
 r = 0.75
