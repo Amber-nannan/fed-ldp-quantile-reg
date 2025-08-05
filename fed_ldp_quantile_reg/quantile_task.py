@@ -69,7 +69,7 @@ def load_data(partition_id: int, num_partitions: int, context=Context):
     return trainloader, Em_list
 
 
-def lr_schedule(step,c0=0.5,a=0.51,b=0):
+def lr_schedule(step,c0=0.01,a=0.51,b=0):
     """Learning rate schedule"""
     lr = c0 / (step**a + b)
     return lr
