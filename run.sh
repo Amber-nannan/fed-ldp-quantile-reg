@@ -27,7 +27,7 @@ for r in "${r_values[@]}"; do
     
     # 提取最后一轮的MSE结果
     FINAL_MSE=$(grep "整体 MSE:" "$LOG_FILE" | tail -1)
-    echo "r=$r, em=$em, MSE=$FINAL_MSE" | tee -a "${RESULTS_DIR}/summary.txt"
+    echo "r=$r, em=$em, $FINAL_MSE" | tee -a "${RESULTS_DIR}/summary.txt"
     echo "Results saved to $LOG_FILE"
     echo ""
   done

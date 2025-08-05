@@ -69,25 +69,32 @@ def load_data(partition_id: int, num_partitions: int, context=Context):
     return trainloader, Em_list
 
 
+def lr_schedule(step,c0=0.5,a=0.51,b=0):
+    """Learning rate schedule"""
+    lr = c0 / (step**a + b)
+    return lr
+
 def train(net, tau, r, trainloader, Em_list, server_rounds_cnt, device):
     """Train the model with LDP mechanism."""
     net.to(device)
     tau_tilde = r * tau + (1 - r) / 2
-    optimizer = torch.optim.SGD(net.parameters(), lr=0.01)
-    
+    local_iter_nums = Em_list[server_rounds_cnt]
+
+    # compute lr for current round
+    effective_lr =  lr_schedule(step=server_rounds_cnt+1)
+    lr = effective_lr / local_iter_nums
+
     running_loss = 0.0
     data_iter = iter(trainloader)
     
     # Perform specified number of SGD updates
-    local_iter_nums = Em_list[server_rounds_cnt]
     for _ in range(local_iter_nums):
         try:
-            x, y = next(data_iter)
+            x, y = next(data_iter)   # torch.Size([1, 6]) torch.Size([1])
         except StopIteration:
             print('Run out of data')   # 模拟状况下应该不会出现，real data 可能出现
             
         x, y = x.to(device), y.to(device)
-        optimizer.zero_grad()
         
         y_pred = net(x)
         z_true = (y <= y_pred).float()
@@ -100,11 +107,14 @@ def train(net, tau, r, trainloader, Em_list, server_rounds_cnt, device):
             z_tilde = torch.tensor(z_tilde, dtype=torch.float32, device=device)
         
         # Calculate gradients manually
-        net.linear.weight.grad = x * (z_tilde - tau_tilde)
-        net.linear.bias.grad = (z_tilde - tau_tilde).view(-1)
+        net.zero_grad()
+        net.linear.weight.grad = x * (z_tilde - tau_tilde)  # torch.Size([1, 6])
+        net.linear.bias.grad = (z_tilde - tau_tilde).view(-1)  # torch.Size([1])
         
         # Update parameters
-        optimizer.step()
+        with torch.no_grad():
+            net.linear.weight -= lr * net.linear.weight.grad
+            net.linear.bias -= lr * net.linear.bias.grad
         
         # Calculate pinball loss for monitoring
         residuals = y - y_pred
