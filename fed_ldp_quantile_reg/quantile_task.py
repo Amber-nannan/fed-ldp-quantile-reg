@@ -24,10 +24,15 @@ class QuantileNet(nn.Module):
 def generate_data(rounds: int, local_updates_mode: Union[str|int], n_clients: int):
     """Generate synthetic data for quantile regression."""
 
-    if isinstance(local_updates_mode,int):
-        Em_list = [local_updates_mode] * rounds
-    elif isinstance(local_updates_mode,str) and local_updates_mode == 'log':
-        Em_list = [int(math.ceil(math.log2(i+1))) for i in range(1,rounds+1)]
+    # Set the Em of the top 5% rounds to 1.
+    Em_list = []
+    first_5_percent = int(rounds * 0.05)
+    Em_list.extend([1] * first_5_percent)
+
+    if isinstance(local_updates_mode, int):
+        Em_list.extend([local_updates_mode] * (rounds - first_5_percent))
+    elif isinstance(local_updates_mode, str) and local_updates_mode == 'log':
+        Em_list.extend([int(math.ceil(math.log2(i + 1))) for i in range(1, rounds - first_5_percent+ 1)])
     
     n_samples = sum(Em_list) * n_clients
     p = 6  # dimension of covariates
