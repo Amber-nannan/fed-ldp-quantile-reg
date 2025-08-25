@@ -16,7 +16,11 @@ class QuantileNet(nn.Module):
     def __init__(self, input_dim=6):
         super(QuantileNet, self).__init__()
         self.linear = nn.Linear(input_dim, 1)
-    
+
+        with torch.no_grad(): 
+            self.linear.weight.copy_(torch.randn(1, input_dim)) * 0.1 # shape: [1, 6]
+            self.linear.bias.copy_(torch.tensor(0.0))
+
     def forward(self, x):
         return self.linear(x)
 
