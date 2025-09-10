@@ -33,11 +33,12 @@ clientapp = "fed_ldp_quantile_reg.client_app:app"
 
 # Custom config values accessible via `context.run_config`
 [tool.flwr.app.config]
-num-server-rounds = 5000   # 通信次数
+num-server-rounds = 500   # 通信次数
 fraction-fit = 1
 tau = 0.9
 r = 0.75
 local-updates-mode = "log"    # Em 模式
+seed = 42       # 用来初始化参数的种子
 
 # Default federation to use when running the app
 [tool.flwr.federations]

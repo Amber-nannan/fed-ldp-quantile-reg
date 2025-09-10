@@ -17,10 +17,6 @@ class QuantileNet(nn.Module):
         super(QuantileNet, self).__init__()
         self.linear = nn.Linear(input_dim, 1)
 
-        with torch.no_grad(): 
-            self.linear.weight.copy_(torch.randn(1, input_dim)) * 0.1 # shape: [1, 6]
-            self.linear.bias.copy_(torch.tensor(0.0))
-
     def forward(self, x):
         return self.linear(x)
 
@@ -42,6 +38,7 @@ def generate_data(rounds: int, local_updates_mode: Union[str|int], n_clients: in
     p = 6  # dimension of covariates
     
     # Generate data
+    np.random.seed(42)
     Sigma = np.array([[0.5 ** abs(j1 - j2) for j2 in range(p)] for j1 in range(p)])
     X_covariates = np.random.multivariate_normal(
         mean=np.zeros(p),

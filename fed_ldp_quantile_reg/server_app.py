@@ -7,7 +7,7 @@ from sympy import evaluate
 from fed_ldp_quantile_reg.quantile_task import QuantileNet, get_weights
 import numpy as np
 from scipy.stats import norm
-
+import torch
 
 class FedPolyakRuppert(FedAvg):
     def __init__(self, tau, **kwargs):
@@ -56,7 +56,6 @@ class FedPolyakRuppert(FedAvg):
         mse = np.mean((beta_pred - self.beta_true) ** 2)
 
         return float(mse), {
-            "round": rnd,
             "mse": float(mse),
             "PR_estimator": [round(x, 6) for x in beta_pred.tolist()],
         }
@@ -67,9 +66,16 @@ def server_fn(context: Context):
     num_rounds = context.run_config["num-server-rounds"]
     fraction_fit = context.run_config["fraction-fit"]
     tau = context.run_config["tau"] 
+    seed = context.run_config['seed']
 
     # Initialize model parameters
-    ndarrays = get_weights(QuantileNet())
+    initial_net = QuantileNet()
+    torch.manual_seed(seed) 
+    with torch.no_grad(): 
+        initial_net.linear.weight.copy_(torch.randn(1, 6)* 0.1)  # shape: [1, 6]
+        initial_net.linear.bias.copy_(torch.tensor(0.0))
+    ndarrays = get_weights(initial_net)
+    # ndarrays = get_weights(QuantileNet())
     parameters = ndarrays_to_parameters(ndarrays)
 
     # Define strategy
