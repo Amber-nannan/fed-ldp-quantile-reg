@@ -4,7 +4,7 @@ import torch
 from scipy.stats import norm
 import numpy as np
 from flwr.client import ClientApp, NumPyClient
-from flwr.common import Context
+from flwr.common import Context, ConfigRecord
 from fed_ldp_quantile_reg.quantile_task import (
     QuantileNet,
     load_data,
@@ -14,23 +14,34 @@ from fed_ldp_quantile_reg.quantile_task import (
 )
 
 class QuantileClient(NumPyClient):
-    def __init__(self, net, tau, r, trainloader, local_updates_mode , Em_list):
-        self.net = net
-        self.tau = tau
-        self.r = r
+    def __init__(self, trainloader, Em_list, context: Context):
+        self.net = QuantileNet()
+        self.tau = context.run_config["tau"]
+        self.r = context.run_config["r"]
+        self.local_updates_mode = context.run_config["local-updates-mode"]    # Em mode
         
         # params related to train data
         self.trainloader = trainloader
-        self.local_updates_mode = local_updates_mode    # Em mode
         self.Em_list = Em_list         # contain Em detail
-        self.server_rounds_cnt = 0     # used as Em idx
 
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.net.to(self.device)
 
+        # record round info (stateful)
+        self.client_state = (context.state)
+        if 'round_info' not in context.state.config_records:
+            context.state.config_records['round_info']  = ConfigRecord()
+
 
     def fit(self, parameters, config):
         set_weights(self.net, parameters)
+
+        # update round_idx
+        round_info = self.client_state.config_records['round_info'] 
+        if 'round_idx' not in round_info:   
+            round_info['round_idx'] = 0
+        else:
+            round_info['round_idx'] += 1
 
         train_loss = train(
             net=self.net,
@@ -38,10 +49,9 @@ class QuantileClient(NumPyClient):
             r=self.r,
             trainloader=self.trainloader,
             Em_list=self.Em_list,
-            server_rounds_cnt=self.server_rounds_cnt,
+            server_rounds_cnt=round_info['round_idx'],
             device=self.device,
         )
-        self.server_rounds_cnt += 1
 
         return (
             get_weights(self.net),
@@ -50,29 +60,14 @@ class QuantileClient(NumPyClient):
         )
 
 def client_fn(context: Context):
-    # Get configuration parameters
-    partition_id = context.node_config["partition-id"]
-    num_partitions = context.node_config["num-partitions"]
-    tau = context.run_config["tau"]
-    r = context.run_config["r"]
-    local_updates_mode = context.run_config["local-updates-mode"]   # Em mode
-
     # Load data for this partition
-    trainloader, Em_list = load_data(
-        partition_id=partition_id,
-        num_partitions=num_partitions,
-        context=context
-    )
+    trainloader, Em_list = load_data(context=context)
 
     # Return client instance
-    net = QuantileNet()
     return QuantileClient(
-        net=net,
-        tau=tau,
-        r=r,
         trainloader=trainloader,
-        local_updates_mode=local_updates_mode,
-        Em_list=Em_list
+        Em_list=Em_list,
+        context=context
     ).to_client()
 
 

@@ -8,7 +8,8 @@ import math
 from flwr.common import Context
 from collections import OrderedDict
 from torch.utils.data import DataLoader, TensorDataset
-
+import itertools
+_global_data= None
 
 class QuantileNet(nn.Module):
     """Quantile Regression Model"""
@@ -55,14 +56,22 @@ def generate_data(rounds: int, local_updates_mode: Union[str|int], n_clients: in
     return X, y, Em_list
 
 
-def load_data(partition_id: int, num_partitions: int, context=Context):
+def load_data(context=Context):
     """load data for quantile regression."""
-    X, y, Em_list = generate_data(
-        rounds=context.run_config['num-server-rounds'],
-        local_updates_mode=context.run_config['local-updates-mode'], 
-        n_clients=context.node_config['num-partitions']
-    )
+
+    global _global_data
+    if _global_data is None:
+        _global_data = generate_data(
+            rounds=context.run_config['num-server-rounds'],
+            local_updates_mode=context.run_config['local-updates-mode'], 
+            n_clients=context.node_config['num-partitions'] 
+        )
+
+    X, y, Em_list = _global_data
     
+    # get data for this partition
+    partition_id = context.node_config["partition-id"]
+    num_partitions = context.node_config["num-partitions"]
     n_samples = len(y)
     per_partition_num = n_samples // num_partitions
     start_idx = partition_id * per_partition_num
@@ -70,7 +79,7 @@ def load_data(partition_id: int, num_partitions: int, context=Context):
 
     # Create dataset and dataloaders
     dataset = TensorDataset(X[start_idx:end_idx], y[start_idx:end_idx])
-    trainloader = DataLoader(dataset, batch_size=1, shuffle=True)
+    trainloader = DataLoader(dataset, batch_size=1, shuffle=False)
     
     return trainloader, Em_list
 
@@ -85,23 +94,17 @@ def train(net, tau, r, trainloader, Em_list, server_rounds_cnt, device):
     net.to(device)
     tau_tilde = r * tau + (1 - r) / 2
     local_iter_nums = Em_list[server_rounds_cnt]
+    begin_idx = sum(Em_list[:server_rounds_cnt])
 
     # compute lr for current round
     effective_lr =  lr_schedule(step=server_rounds_cnt+1)
     lr = effective_lr / local_iter_nums
 
     running_loss = 0.0
-    data_iter = iter(trainloader)
-    
+
     # Perform specified number of SGD updates
-    for _ in range(local_iter_nums):
-        try:
-            x, y = next(data_iter)   # torch.Size([1, 6]) torch.Size([1])
-        except StopIteration:
-            print('Run out of data')   # 模拟状况下应该不会出现，real data 可能出现
-            
+    for _, (x, y) in enumerate(itertools.islice(trainloader, begin_idx, begin_idx + local_iter_nums)): 
         x, y = x.to(device), y.to(device)
-        
         y_pred = net(x)
         z_true = (y <= y_pred).float()
         
